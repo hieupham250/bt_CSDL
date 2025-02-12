@@ -82,6 +82,8 @@ order by averagemark desc;
 update subjects
 set subjectname = concat('day la mon hoc ', subjectname);
 
+delete from students where studentid = 1;
+
 alter table classstudent drop foreign key classstudent_ibfk_1;
 alter table classstudent drop foreign key classstudent_ibfk_2;
 alter table marks drop foreign key marks_ibfk_1;
