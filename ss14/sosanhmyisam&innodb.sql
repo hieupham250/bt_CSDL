@@ -1,92 +1,128 @@
-----------------------------------------------------------------------
+/*
+-----------------------------------------------------------------------------------------------------
 | Tiêu chí               | MyISAM                             | InnoDB                              |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Hỗ trợ giao dịch (ACID)| Không                              | Có                                  |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Khóa (Locking)         | Khóa bảng                          | Khóa dòng                           |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Tốc độ đọc             | Nhanh hơn với truy vấn SELECT      | Ghi nhanh hơn                       |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Tốc độ ghi             | Chậm hơn do không hỗ trợ giao dịch | Nhanh hơn khi có nhiều thao tác ghi |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Khóa ngoại             | Không hỗ trợ                       | Hỗ trợ                              |
-----------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 | Rollback               | Không có                           | Có thể rollback                     |
 
+*/
 
--- 1 hỗ trợ giao dịch(ko)
--- myisam
+CREATE DATABASE sosanh;
+
+USE sosanh;
+
+-- ========================== HỖ TRỢ GIAO DỊCH (ACID) ===========================
+-- Với MyISAM (Không hỗ trợ giao dịch)
+CREATE TABLE transactions_myisam (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    description VARCHAR(255),
+    amount DECIMAL(10,2)
+) ENGINE=MyISAM;
+
+START TRANSACTION;
+INSERT INTO transactions_myisam (description, amount) VALUES ('Mua hàng', 100.00);
+ROLLBACK; -- Không có tác dụng, dữ liệu vẫn được lưu
+
+-- Với InnoDB (Có hỗ trợ giao dịch)
+CREATE TABLE transactions_innodb (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    description VARCHAR(255),
+    amount DECIMAL(10,2)
+) ENGINE=InnoDB;
+
+START TRANSACTION;
+INSERT INTO transactions_innodb (description, amount) VALUES ('Mua hàng', 100.00);
+ROLLBACK; -- Dữ liệu không được lưu vào bảng
+
+-- ========================== KHÓA (LOCKING) ===========================
+-- MyISAM khóa bảng
+CREATE TABLE users_myisam (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100),
+    age INT
+) ENGINE=MyISAM;
+
+START TRANSACTION;
+UPDATE users_myisam SET age = 30 WHERE id = 1;
+-- Cả bảng bị khóa, không thể cập nhật dòng khác
+
+-- InnoDB khóa dòng
+CREATE TABLE users_innodb (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100),
+    age INT
+) ENGINE=InnoDB;
+
+START TRANSACTION;
+UPDATE users_innodb SET age = 30 WHERE id = 1;
+-- Chỉ khóa dòng có id = 1, các dòng khác vẫn có thể cập nhật
+
+-- ========================== TỐC ĐỘ ĐỌC ===========================
+-- MyISAM nhanh hơn với SELECT do dùng chỉ mục FULLTEXT
+CREATE TABLE posts_myisam (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255),
+    content TEXT,
+    FULLTEXT(title, content)
+) ENGINE=MyISAM;
+
+SELECT * FROM posts_myisam WHERE MATCH(title, content) AGAINST ('database');
+
+-- InnoDB hỗ trợ tìm kiếm nhưng không tối ưu cho FULLTEXT
+CREATE TABLE posts_innodb (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255),
+    content TEXT
+) ENGINE=InnoDB;
+
+SELECT * FROM posts_innodb WHERE title LIKE '%database%';
+
+-- ========================== TỐC ĐỘ GHI ===========================
+-- MyISAM ghi chậm hơn do không hỗ trợ giao dịch
+INSERT INTO users_myisam (name, age) VALUES ('Nguyen Van A', 25);
+-- Không có cơ chế rollback nếu lỗi xảy ra
+
+-- InnoDB ghi nhanh hơn khi có nhiều thao tác nhờ hỗ trợ giao dịch
+START TRANSACTION;
+INSERT INTO users_innodb (name, age) VALUES ('Nguyen Van B', 28);
+COMMIT;
+
+-- ========================== KHÓA NGOẠI ===========================
+-- MyISAM không hỗ trợ khóa ngoại
 CREATE TABLE orders_myisam (
-    order_id INT AUTO_INCREMENT PRIMARY KEY,
-    product_name VARCHAR(100),
-    amount INT
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    FOREIGN KEY (user_id) REFERENCES users_myisam(id) -- Lỗi, MyISAM không hỗ trợ
 ) ENGINE=MyISAM;
 
-START TRANSACTION;
-INSERT INTO orders_myisam (product_name, amount) VALUES ('Laptop', 2);
-ROLLBACK; -- Không có tác dụng, dữ liệu vẫn bị lưu vào bảng
-SELECT * FROM orders_myisam;
--- innodb(co)
+-- InnoDB hỗ trợ khóa ngoại
 CREATE TABLE orders_innodb (
-    order_id INT AUTO_INCREMENT PRIMARY KEY,
-    product_name VARCHAR(100),
-    amount INT
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    FOREIGN KEY (user_id) REFERENCES users_innodb(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ========================== ROLLBACK ===========================
+-- MyISAM không hỗ trợ rollback
 START TRANSACTION;
-INSERT INTO orders_innodb (product_name, amount) VALUES ('Laptop', 2);
-ROLLBACK; -- Thành công, dữ liệu bị hủy
-SELECT * FROM orders_innodb;
--- 2 khoa
--- myisam
-CREATE TABLE inventory_myisam (
-    product_id INT AUTO_INCREMENT PRIMARY KEY,
-    stock INT
-) ENGINE=MyISAM;
+INSERT INTO transactions_myisam (description, amount) VALUES ('Refund', 50.00);
+ROLLBACK; -- Không có tác dụng
 
-LOCK TABLE inventory_myisam WRITE;
-INSERT INTO inventory_myisam (stock) VALUES (100);
-UNLOCK TABLES; -- Toàn bộ bảng bị khóa khi INSERT
- -- innodb
- CREATE TABLE inventory_innodb (
-    product_id INT AUTO_INCREMENT PRIMARY KEY,
-    stock INT
-) ENGINE=InnoDB;
-
+-- InnoDB có thể rollback
 START TRANSACTION;
-UPDATE inventory_innodb SET stock = stock - 1 WHERE product_id = 1;
-COMMIT; -- Chỉ khóa dòng có product_id = 1
--- 3 toc do
--- doc du lieu
-SELECT * FROM big_table; -- MyISAM nhanh hơn InnoDB với truy vấn SELECT lớn
--- ghi du lieu
-INSERT INTO big_table VALUES (...); -- InnoDB nhanh hơn MyISAM khi thực hiện nhiều giao dịch cùng lúc
--- 4 khoa ngoai
--- myisam
-CREATE TABLE customers_myisam (
-    customer_id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100)
-) ENGINE=MyISAM;
+INSERT INTO transactions_innodb (description, amount) VALUES ('Refund', 50.00);
+ROLLBACK; -- Dữ liệu không được lưu
 
-CREATE TABLE orders_myisam (
-    order_id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT,
-    FOREIGN KEY (customer_id) REFERENCES customers_myisam(customer_id) -- Lỗi!
-) ENGINE=MyISAM;
--- innodb
-CREATE TABLE customers_innodb (
-    customer_id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100)
-) ENGINE=InnoDB;
+-- ========================== KẾT LUẬN ===========================
+-- MyISAM nhanh hơn trong SELECT, nhưng không hỗ trợ giao dịch và khóa ngoại.
+-- InnoDB hỗ trợ ACID, khóa ngoại, rollback và ghi nhanh hơn khi có nhiều thao tác ghi.
 
-CREATE TABLE orders_innodb (
-    order_id INT AUTO_INCREMENT PRIMARY KEY,
-    customer_id INT,
-    FOREIGN KEY (customer_id) REFERENCES customers_innodb(customer_id) ON DELETE CASCADE
-) ENGINE=InnoDB;
--- 5 roll back
--- myisam(ko the roll back)
--- innodb
-START TRANSACTION;
-INSERT INTO orders_innodb (product_name, amount) VALUES ('Phone', 3);
-ROLLBACK; -- Xóa dữ liệu vừa chèn
